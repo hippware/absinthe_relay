@@ -380,7 +380,7 @@ defmodule Absinthe.Relay.Connection do
     @spec from_query(Ecto.Queryable.t, (Ecto.Queryable.t -> [term]), Options.t, from_query_opts) :: {:ok, map} | {:error, any}
     def from_query(query, repo_fun, args, opts \\ []) do
       require Ecto.Query
-      with {:ok, offset, limit} <- offset_and_limit_for_query(args, opts) do
+      with {:ok, query, reversed, offset, limit} <- params_for_query(query, args, opts) do
         records =
           query
           |> Ecto.Query.limit(^(limit + 1))
@@ -389,10 +389,17 @@ defmodule Absinthe.Relay.Connection do
 
         opts = [
           has_next_page: args[:first] != nil && length(records) > limit,
-          has_previous_page: args[:last] != nil && offset > 0,
+          has_previous_page:
+          args[:last] != nil && (
+            (!reversed && offset > 0) ||
+            (reversed && length(records) > limit)
+          )
         ] ++ opts
 
-        from_slice(Enum.take(records, limit), offset, opts)
+        records
+        |> Enum.take(limit)
+        |> maybe_reverse(reversed)
+        |> from_slice(offset, opts)
       end
     end
   else
@@ -404,24 +411,45 @@ defmodule Absinthe.Relay.Connection do
       """
     end
   end
+  
+  defp maybe_reverse(results, false), do: results
+  defp maybe_reverse(results, true), do: Enum.reverse(results)
 
   @doc false
-  @spec offset_and_limit_for_query(Options.t, from_query_opts) :: {:ok, offset, limit} | {:error, any}
-  def offset_and_limit_for_query(args, opts) do
+  @spec params_for_query(Ecto.Queryable.t, Options.t, from_query_opts)
+  :: {:ok, Ecto.Queryable.t, boolean, offset, limit} | {:error, any}
+  def params_for_query(query, args, opts) do
     with {:ok, direction, limit} <- limit(args, opts[:max]),
          {:ok, offset} <- offset(args) do
       case direction do
         :forward ->
-          {:ok, offset || 0, limit}
+          {:ok, query, false, offset || 0, limit}
 
         :backward ->
-          case {offset, opts[:count]} do
-            {nil, nil} -> {:error, "You must supply a count (total number of records) option if using `last` without `before`"}
-            {nil, value} -> {:ok, max(value - limit, 0), limit}
-            {value, _} -> {:ok, max(value - limit, 0), limit}
+          case offset do
+            nil -> {:ok, reverse_order(query), true, 0, limit}
+            value -> {:ok, query, false, max(value - limit, 0), limit}
           end
       end
     end
+  end
+
+  defp reverse_order(%Ecto.Query{} = query) do
+    require Ecto.Query
+    IO.inspect query
+    update_in query.order_bys, fn order_bys ->
+      for %{expr: expr} = order_by <- order_bys do
+        %{order_by | expr:
+          Enum.map(expr, fn
+            {:desc, ast} -> {:asc, ast}
+            {:asc, ast} -> {:desc, ast}
+          end)}
+      end
+    end
+  end
+  defp reverse_order(queryable) do
+    IO.inspect queryable
+    reverse_order(Ecto.Queryable.to_query(queryable))
   end
 
   @doc """
