@@ -47,6 +47,10 @@ defmodule AbsintheRelay.Mixfile do
     [
       {:absinthe, "~> 1.5.0-alpha.0"},
       {:ecto, "~> 2.0 or ~> 3.0", optional: true},
+      {:paginator,
+        github: "duffelhq/paginator",
+        branch: "master",
+        optional: true},
       {:poison, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, "~> 0.16", only: :dev}
     ]
