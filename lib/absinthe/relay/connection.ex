@@ -3,10 +3,10 @@ defmodule Absinthe.Relay.Connection.Options do
 
   @typedoc false
   @type t :: %{
-          after: nil | integer,
-          before: nil | integer,
-          first: nil | integer,
-          last: nil | integer
+          optional(:after) => nil | integer,
+          optional(:before) => nil | integer,
+          optional(:first) => nil | integer,
+          optional(:last) => nil | integer
         }
 
   defstruct after: nil, before: nil, first: nil, last: nil
@@ -378,7 +378,7 @@ defmodule Absinthe.Relay.Connection do
 
   def list(args, %{context: %{current_user: user}}) do
     {:ok, :forward, limit} = Connection.limit(args)
-    offset = Connection.offset(args)
+    {:ok, offset} = Connection.offset(args)
 
     Post
     |> where(author_id: ^user.id)
@@ -456,6 +456,7 @@ defmodule Absinthe.Relay.Connection do
   @type from_query_opts ::
           [
             count: non_neg_integer,
+            max: pos_integer,
             cursor_fields: [atom]
           ]
           | from_slice_opts
